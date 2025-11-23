@@ -1,22 +1,93 @@
 import User from "../models/user.js";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 
+// -------------------------------
+// REGISTER CONTROLLER
+// -------------------------------
 export const register = async (req, res) => {
   try {
-    const user = await User.create(req.body);
-    res.status(201).json({ message: "User created", user });
+    console.log("🔥 REGISTER BODY RECEIVED:", req.body);
+
+    const { username, email, password } = req.body;
+
+    // Validate required fields
+    if (!username || !email || !password) {
+      return res.status(400).json({ message: "All fields are required." });
+    }
+
+    // Check if email exists
+    const existing = await User.findOne({ email });
+    if (existing) {
+      return res.status(400).json({ message: "Email already exists" });
+    }
+
+    // Create user (password hashes automatically in user.js)
+    const user = await User.create({ username, email, password });
+
+    // Create JWT token
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET || "supersecretkey",
+      { expiresIn: "1d" }
+    );
+
+    return res.status(201).json({
+      message: "User registered successfully",
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        createdAt: user.createdAt,
+      },
+    });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error("❌ REGISTER ERROR:", err);
+    return res.status(500).json({ error: err.message });
   }
 };
 
+// -------------------------------
+// LOGIN CONTROLLER
+// -------------------------------
 export const login = async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  const user = await User.findOne({ email });
-  if (!user) return res.status(404).json({ error: "User not found" });
+    // Check missing fields
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password required." });
+    }
 
-  const isMatch = await user.comparePassword(password);
-  if (!isMatch) return res.status(400).json({ error: "Invalid password" });
+    // Find user by email
+    const user = await User.findOne({ email });
+    if (!user)
+      return res.status(400).json({ message: "Invalid email or password." });
 
-  res.status(200).json({ message: "Login successful", user });
+    // Compare password using bcrypt
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch)
+      return res.status(400).json({ message: "Invalid email or password." });
+
+    // Create JWT token
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET || "supersecretkey",
+      { expiresIn: "1d" }
+    );
+
+    return res.json({
+      message: "Login successful",
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+      },
+    });
+  } catch (err) {
+    console.error("❌ LOGIN ERROR:", err);
+    return res.status(500).json({ error: err.message });
+  }
 };
